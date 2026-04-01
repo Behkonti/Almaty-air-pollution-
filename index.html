@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Качество воздуха Алматы — интерактивная панель</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://unpkg.com/leaflet/dist/leaflet.css" rel="stylesheet" />
+<style>
+  :root {
+    --bg: #f2f6fb;
+    --card: #ffffff;
+    --text: #1d2433;
+    --muted: #5a6b85;
+    --accent: #2b6df6;
+    --accent-soft: #e6efff;
+    --border: #e3e9f3;
+    --good: #34a853;
+    --warn: #fbbc05;
+    --bad: #ea4335;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    font-family: "IBM Plex Sans", Arial, sans-serif;
+    background: linear-gradient(180deg, #eef3ff 0%, #f8fbff 40%, #ffffff 100%);
+    color: var(--text);
+  }
+
+  .page {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 20px;
+  }
+
+  .header {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    padding: 16px 18px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    box-shadow: 0 8px 24px rgba(27, 39, 94, 0.08);
+  }
+
+  .title-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  h1 {
+    font-size: 22px;
+    margin: 0;
+    font-weight: 700;
+  }
+
+  .updated {
+    font-size: 12px;
+    color: var(--muted);
+  }
+
+  .controls {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    margin-top: 12px;
+  }
+
+  .control {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .control label {
+    font-size: 12px;
+    color: var(--muted);
+  }
+
+  select, button {
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    font-size: 14px;
+    background: #fff;
+    color: var(--text);
+  }
+
+  button {
+    cursor: pointer;
+    background: var(--accent);
+    color: #fff;
+    border: none;
+  }
+
+  .stats {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+    margin-top: 16px;
+  }
+
+  .stat-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 12px 14px;
+  }
+
+  .stat-title {
+    font-size: 12px;
+    color: var(--muted);
+    margin-bottom: 6px;
+  }
+
+  .stat-value {
+    font-size: 20px;
+    font-weight: 700;
+  }
+
+  .layout {
+    margin-top: 18px;
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+
+  .panel {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 12px;
+  }
+
+  .panel h2 {
+    font-size: 16px;
+    margin: 0 0 8px 4px;
+  }
+
+  #map {
+    width: 100%;
+    height: 420px;
+    border-radius: 12px;
+    overflow: hidden;
+  }
+
+  #chart {
+    width: 100%;
+    height: 320px;
+  }
+
+  .legend {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 8px;
+  }
+
+  .legend span {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .legend i {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    display: inline-block;
+  }
+
+  .source {
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 10px;
+  }
+
+  @media (max-width: 820px) {
+    .controls, .stats {
+      grid-template-columns: 1fr;
+    }
+    .title-row {
+      flex-direction: column;
+      align-items: flex-start;
+    }
+  }
+</style>
+</head>
+<body>
+  <div class="page">
+    <div class="header">
+      <div class="title-row">
+        <h1>Качество воздуха в Алматы</h1>
+        <div class="updated" id="last-updated">Обновление…</div>
+      </div>
+      <div class="controls">
+        <div class="control">
+          <label for="district-select">Район</label>
+          <select id="district-select"></select>
+        </div>
+        <div class="control">
+          <label for="pollutant-select">Показатель</label>
+          <select id="pollutant-select"></select>
+        </div>
+      </div>
+      <div class="stats">
+        <div class="stat-card">
+          <div class="stat-title">Среднее по городу</div>
+          <div class="stat-value" id="city-average">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-title">Выбранный район</div>
+          <div class="stat-value" id="district-current">—</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-title">Текущий индекс AQI</div>
+          <div class="stat-value" id="aqi-current">—</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="layout">
+      <div class="panel">
+        <h2>Карта загрязнения</h2>
+        <div id="map"></div>
+        <div class="legend" id="legend"></div>
+      </div>
+
+      <div class="panel">
+        <h2>Динамика за последние 24 часа</h2>
+        <canvas id="chart"></canvas>
+      </div>
+    </div>
+
+    <div class="source">
+      Источник данных: Open-Meteo Air Quality API (модель CAMS). Данные обновляются при смене района или показателя и показывают модельные оценки, а не показания конкретных сенсоров.
+    </div>
+
+    <div class="panel" style="margin-top: 16px;">
+      <h2>Почему загрязняется воздух в Алматы (по данным IQAir и общим исследованиям)</h2>
+      <p><strong>Текущее состояние:</strong> IQAir показывает, что в Алматы нередко фиксируются повышенные значения AQI, и главный вклад чаще всего дает <strong>PM2.5</strong> — мелкие частицы, которые глубоко проникают в легкие.</p>
+
+      <h3>Основные причины</h3>
+      <ul>
+        <li><strong>Транспорт:</strong> большое количество автомобилей и пробок повышают концентрации PM2.5 и NO₂.</li>
+        <li><strong>Отопление зимой:</strong> ТЭЦ и частные печи на твердом топливе резко увеличивают выбросы PM2.5.</li>
+        <li><strong>География города:</strong> котловина и слабый ветер в холодный сезон удерживают загрязнения над городом.</li>
+      </ul>
+
+      <h3>Что может улучшить ситуацию</h3>
+      <ul>
+        <li>Развитие общественного транспорта и снижение доли старых авто.</li>
+        <li>Переход на более чистые источники отопления.</li>
+        <li>Усиление контроля выбросов и городской мониторинг.</li>
+      </ul>
+
+      <h3>Что делать жителям в дни смога</h3>
+      <ul>
+        <li>Сократить время на улице, особенно детям и людям с заболеваниями дыхательных путей.</li>
+        <li>Использовать маски уровня N95/KN95 при выходе на улицу.</li>
+        <li>Проветривать помещение в периоды, когда показатели AQI снижаются.</li>
+      </ul>
+    </div>
+  </div>
+
+<script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+  const BASE_URL = "https://air-quality-api.open-meteo.com/v1/air-quality";
+
+  const districts = [
+    { id: "medeuskiy", name: "Медеуский", lat: 43.25, lon: 76.95 },
+    { id: "nauryzbai", name: "Наурызбайский", lat: 43.1667, lon: 76.8333 },
+    { id: "bostandyk", name: "Бостандыкский", lat: 43.2, lon: 76.9 },
+    { id: "almaly", name: "Алмалинский", lat: 43.25, lon: 76.9 },
+    { id: "zhetysu", name: "Жетысуский", lat: 43.3117, lon: 76.9289 },
+    { id: "turksib", name: "Турксибский", lat: 43.35, lon: 77.0 },
+    { id: "auezov", name: "Ауэзовский", lat: 43.2244, lon: 76.8472 },
+    { id: "alatau", name: "Алатауский", lat: 43.2933, lon: 76.8292 }
+  ];
+
+  const pollutants = [
+    { key: "pm2_5", label: "PM2.5 (мкг/м³)" },
+    { key: "pm10", label: "PM10 (мкг/м³)" },
+    { key: "nitrogen_dioxide", label: "NO₂ (мкг/м³)" },
+    { key: "ozone", label: "O₃ (мкг/м³)" },
+    { key: "sulphur_dioxide", label: "SO₂ (мкг/м³)" },
+    { key: "carbon_monoxide", label: "CO (мкг/м³)" },
+    { key: "european_aqi", label: "Европейский AQI" },
+    { key: "us_aqi", label: "US AQI" }
+  ];
+
+  const districtSelect = document.getElementById("district-select");
+  const pollutantSelect = document.getElementById("pollutant-select");
+  const lastUpdated = document.getElementById("last-updated");
+  const cityAverageEl = document.getElementById("city-average");
+  const districtCurrentEl = document.getElementById("district-current");
+  const aqiCurrentEl = document.getElementById("aqi-current");
+  const legend = document.getElementById("legend");
+
+  let selectedDistrictId = districts[0].id;
+  let selectedPollutant = pollutants[0].key;
+  let map, markers = new Map();
+  let chart;
+
+  function initSelectors() {
+    districts.forEach(d => {
+      const opt = document.createElement("option");
+      opt.value = d.id;
+      opt.textContent = d.name;
+      districtSelect.appendChild(opt);
+    });
+
+    pollutants.forEach(p => {
+      const opt = document.createElement("option");
+      opt.value = p.key;
+      opt.textContent = p.label;
+      pollutantSelect.appendChild(opt);
+    });
+
+    districtSelect.addEventListener("change", () => {
+      selectedDistrictId = districtSelect.value;
+      refreshAll();
+    });
+
+    pollutantSelect.addEventListener("change", () => {
+      selectedPollutant = pollutantSelect.value;
+      refreshAll();
+    });
+
+  }
+
+  function initMap() {
+    map = L.map('map').setView([43.25, 76.95], 11);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(map);
+
+    districts.forEach(d => {
+      const marker = L.circleMarker([d.lat, d.lon], {
+        radius: 10,
+        color: '#4caf50',
+        fillColor: '#4caf50',
+        fillOpacity: 0.7
+      }).addTo(map).bindPopup(`${d.name}: загрузка...`);
+      marker.on('click', () => {
+        selectedDistrictId = d.id;
+        districtSelect.value = d.id;
+        refreshAll();
+      });
+      markers.set(d.id, marker);
+    });
+  }
+
+  function initChart() {
+    const ctx = document.getElementById('chart').getContext('2d');
+    chart = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: [],
+        datasets: [{
+          label: 'Данные',
+          data: [],
+          borderColor: '#2b6df6',
+          backgroundColor: 'rgba(43, 109, 246, 0.15)',
+          tension: 0.3,
+          fill: true,
+          pointRadius: 2
+        }]
+      },
+      options: {
+        responsive: true,
+        plugins: {
+          legend: { display: false }
+        },
+        scales: {
+          x: {
+            ticks: { maxTicksLimit: 8 }
+          },
+          y: {
+            beginAtZero: false
+          }
+        }
+      }
+    });
+  }
+
+  function formatValue(value, unit) {
+    if (value === null || value === undefined || Number.isNaN(value)) return "—";
+    const rounded = Math.round(value * 10) / 10;
+    return unit ? `${rounded} ${unit}` : `${rounded}`;
+  }
+
+  function getAqiColor(value) {
+    if (value === null || value === undefined || Number.isNaN(value)) return '#9aa5b1';
+    if (value <= 50) return '#34a853';
+    if (value <= 100) return '#fbbc05';
+    if (value <= 150) return '#f57c00';
+    if (value <= 200) return '#e53935';
+    if (value <= 300) return '#8e24aa';
+    return '#7e0023';
+  }
+
+  function getRelativeColor(value, min, max) {
+    if (value === null || value === undefined || Number.isNaN(value)) return '#9aa5b1';
+    if (max === min) return '#2b6df6';
+    const ratio = (value - min) / (max - min);
+    const r = Math.round(52 + ratio * (234 - 52));
+    const g = Math.round(168 - ratio * 120);
+    const b = Math.round(83 - ratio * 50);
+    return `rgb(${r}, ${g}, ${b})`;
+  }
+
+  function isAqiKey(key) {
+    return key === 'european_aqi' || key === 'us_aqi';
+  }
+
+  function updateLegend(isAqiMode) {
+    legend.innerHTML = '';
+    if (!isAqiMode) {
+      legend.textContent = 'Цвет маркера: относительный уровень загрязнения среди районов.';
+      return;
+    }
+    const items = [
+      { label: '0–50', color: '#34a853' },
+      { label: '51–100', color: '#fbbc05' },
+      { label: '101–150', color: '#f57c00' },
+      { label: '151–200', color: '#e53935' },
+      { label: '201–300', color: '#8e24aa' },
+      { label: '300+', color: '#7e0023' }
+    ];
+    items.forEach(item => {
+      const span = document.createElement('span');
+      const dot = document.createElement('i');
+      dot.style.background = item.color;
+      span.appendChild(dot);
+      span.appendChild(document.createTextNode(item.label));
+      legend.appendChild(span);
+    });
+  }
+
+  async function fetchCurrentForDistricts() {
+    const lats = districts.map(d => d.lat).join(',');
+    const lons = districts.map(d => d.lon).join(',');
+    const currentVars = [
+      'pm2_5', 'pm10', 'nitrogen_dioxide', 'ozone',
+      'sulphur_dioxide', 'carbon_monoxide', 'european_aqi', 'us_aqi'
+    ];
+    const url = `${BASE_URL}?latitude=${lats}&longitude=${lons}&current=${currentVars.join(',')}&timezone=auto`;
+
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('Не удалось получить данные');
+    const data = await res.json();
+    return Array.isArray(data) ? data : [data];
+  }
+
+  async function fetchHourlyForDistrict(district) {
+    const url = `${BASE_URL}?latitude=${district.lat}&longitude=${district.lon}` +
+      `&hourly=${selectedPollutant}&past_hours=24&forecast_hours=0&timezone=auto`;
+
+    const res = await fetch(url);
+    if (!res.ok) throw new Error('Не удалось получить данные');
+    return await res.json();
+  }
+
+  function updateStats(currentData, units) {
+    const values = currentData.map(d => d?.current?.[selectedPollutant]).filter(v => v !== null && v !== undefined);
+    const avg = values.length ? values.reduce((a, b) => a + b, 0) / values.length : null;
+    const unit = units?.[selectedPollutant] || '';
+    cityAverageEl.textContent = formatValue(avg, unit);
+
+    const selected = currentData[districts.findIndex(d => d.id === selectedDistrictId)];
+    const selectedValue = selected?.current?.[selectedPollutant];
+    districtCurrentEl.textContent = formatValue(selectedValue, unit);
+
+    const aqiValue = selected?.current?.european_aqi ?? selected?.current?.us_aqi;
+    aqiCurrentEl.textContent = formatValue(aqiValue, 'AQI');
+  }
+
+  function updateMap(currentData, units) {
+    const values = currentData.map(d => d?.current?.[selectedPollutant]).filter(v => v !== null && v !== undefined);
+    const min = values.length ? Math.min(...values) : 0;
+    const max = values.length ? Math.max(...values) : 0;
+
+    updateLegend(isAqiKey(selectedPollutant));
+
+    currentData.forEach((loc, idx) => {
+      const district = districts[idx];
+      const value = loc?.current?.[selectedPollutant];
+      const unit = units?.[selectedPollutant] || '';
+      const color = isAqiKey(selectedPollutant) ? getAqiColor(value) : getRelativeColor(value, min, max);
+
+      const marker = markers.get(district.id);
+      if (!marker) return;
+      marker.setStyle({ color, fillColor: color });
+      marker.bindPopup(`${district.name}: ${formatValue(value, unit)}`);
+    });
+  }
+
+  function updateChart(hourlyData) {
+    const times = hourlyData?.hourly?.time || [];
+    const values = hourlyData?.hourly?.[selectedPollutant] || [];
+    const unit = hourlyData?.hourly_units?.[selectedPollutant] || '';
+
+    const labels = times.map(t => {
+      const date = new Date(t);
+      if (Number.isNaN(date.getTime())) return t.slice(11, 16);
+      return date.toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' });
+    });
+
+    chart.data.labels = labels;
+    chart.data.datasets[0].label = pollutants.find(p => p.key === selectedPollutant)?.label || 'Данные';
+    chart.data.datasets[0].data = values;
+    chart.options.scales.y.title = { display: true, text: unit ? unit : '' };
+    chart.update();
+  }
+
+  function setUpdatedStamp() {
+    const now = new Date();
+    lastUpdated.textContent = `Обновлено: ${now.toLocaleString('ru-RU')}`;
+  }
+
+  async function refreshAll() {
+    try {
+      const currentData = await fetchCurrentForDistricts();
+      const units = currentData[0]?.current_units || {};
+      updateStats(currentData, units);
+      updateMap(currentData, units);
+
+      const selectedDistrict = districts.find(d => d.id === selectedDistrictId);
+      const hourlyData = await fetchHourlyForDistrict(selectedDistrict);
+      updateChart(hourlyData);
+      setUpdatedStamp();
+    } catch (err) {
+      console.error(err);
+      lastUpdated.textContent = 'Ошибка обновления. Проверьте подключение.';
+    }
+  }
+
+  initSelectors();
+  initMap();
+  initChart();
+  refreshAll();
+</script>
+</body>
+</html>
