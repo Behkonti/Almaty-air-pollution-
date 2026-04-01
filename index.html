@@ -1,542 +1,116 @@
 <!DOCTYPE html>
 <html lang="ru">
 <head>
-<meta charset="UTF-8" />
-<title>Качество воздуха Алматы</title>
+<meta charset="UTF-8">
+<title>Качество воздуха — Алматы</title>
+
+<link href="https://unpkg.com/leaflet/dist/leaflet.css" rel="stylesheet"/>
+
 <style>
-  body { font-family: Arial; background: #f7faff; margin: 20px; }
-  .header { display: flex; gap: 10px; margin-bottom: 20px; }
-  .aqi-item { background: #fff4c2; border-radius: 8px; padding: 10px; flex: 1; text-align: center; font-weight: bold; }
-  #map { width: 600px; height: 400px; margin-bottom: 20px; }
-  #chart { width: 600px; height: 300px; }
-  .controls { margin-top: 20px; }
+body {
+  margin: 0;
+  font-family: Arial, sans-serif;
+  background: linear-gradient(135deg, #667eea, #764ba2);
+  color: white;
+}
+
+.container {
+  max-width: 1000px;
+  margin: auto;
+  padding: 20px;
+}
+
+h1 {
+  text-align: center;
+}
+
+.card {
+  background: rgba(255,255,255,0.1);
+  padding: 20px;
+  border-radius: 15px;
+  margin-bottom: 20px;
+  backdrop-filter: blur(10px);
+}
+
+.aqi {
+  font-size: 40px;
+  text-align: center;
+  margin-top: 10px;
+}
+
+.status {
+  text-align: center;
+  font-size: 18px;
+}
+
+#map {
+  height: 400px;
+  border-radius: 15px;
+}
 </style>
-<link href="https://unpkg.com/leaflet/dist/leaflet.css" rel="stylesheet" />
 </head>
+
 <body>
 
-<div class="header" id="aqi-summary">
-  <!-- AQI по районам появится здесь через JS -->
+<div class="container">
+
+<h1>🌫 Качество воздуха в Алматы</h1>
+
+<div class="card">
+  <div class="aqi" id="aqi">Загрузка...</div>
+  <div class="status" id="status"></div>
 </div>
 
-<div id="map"></div>
+<div class="card">
+  <div id="map"></div>
+</div>
 
-<canvas id="chart"></canvas>
-
-<div class="controls">
-  Район: <select id="district-select">
-    <option value="all">Весь город</option>
-    <option value="Medeu">Медеуский</option>
-    <option value="Nauryzbai">Наурызбайский</option>
-    <!-- Добавь остальные -->
-  </select>
-
-  Загрязнитель: <select id="pollutant-select">
-    <option value="pm25">PM2.5</option>
-    <option value="pm10">PM10</option>
-    <!-- Можно расширить -->
-  </select>
-
-  Год: <select id="year-select">
-    <option value="2026">2026</option>
-    <option value="2025">2025</option>
-  </select>
 </div>
 
 <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
 <script>
-// Данные AQI (пример)
-const aqiData = {
-  Medeu: 66, Nauryzbai: 65, Bostandyk: 64, Almaly: 63,
-  Zhetysu: 62, Turksib: 61, Auezov: 61, Alatau: 60
-};
-
-// Отрисовка верхней панели AQI
-const aqiSummary = document.getElementById('aqi-summary');
-for (const [district, aqi] of Object.entries(aqiData)) {
-  const div = document.createElement('div');
-  div.className = 'aqi-item';
-  div.textContent = `${district} ${aqi} AQI`;
-  aqiSummary.appendChild(div);
-}
-
-// Инициализация карты Leaflet
 const map = L.map('map').setView([43.25, 76.95], 11);
+
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-  attribution: '&copy; OpenStreetMap contributors'
+  attribution: '© OpenStreetMap'
 }).addTo(map);
 
-// Пример точек загрязнения (задать реальные координаты)
-const points = [
-  {district: 'Medeu', coords: [43.22, 76.92], aqi: 66},
-  {district: 'Nauryzbai', coords: [43.20, 76.96], aqi: 65},
-  // ... другие районы
-];
+let marker = L.marker([43.25, 76.95]).addTo(map);
 
-// Добавляем точки на карту с цветом в зависимости от AQI
-points.forEach(p => {
-  let color = 'green';
-  if (p.aqi > 150) color = 'red';
-  else if (p.aqi > 100) color = 'orange';
-  else if (p.aqi > 50) color = 'yellow';
+// 🔥 Функция получения данных
+async function loadAirData() {
+  try {
+    const res = await fetch("https://api.openaq.org/v2/latest?city=Almaty");
+    const data = await res.json();
 
-  L.circleMarker(p.coords, {
-    radius: 10,
-    color,
-    fillColor: color,
-    fillOpacity: 0.6
-  }).addTo(map).bindPopup(`${p.district}: ${p.aqi} AQI`);
-});
+    let pm25 = data.results[0].measurements.find(m => m.parameter === "pm25");
 
-// Пример графика 24 часа
-const ctx = document.getElementById('chart').getContext('2d');
-const chart = new Chart(ctx, {
-  type: 'line',
-  data: {
-    labels: ['00:00', '03:00', '06:00', '09:00', '12:00', '15:00', '18:00', '21:00'],
-    datasets: [{
-      label: 'AQI сегодня',
-      data: [90, 80, 75, 85, 70, 65, 60, 62],
-      borderColor: 'blue',
-      fill: false
-    }]
-  },
-  options: {
-    responsive: false,
-    scales: {
-      y: { beginAtZero: true, max: 150 }
-    }
+    let value = pm25 ? pm25.value : "Нет данных";
+
+    document.getElementById("aqi").innerText = value;
+
+    let status = "Хорошо";
+    if (value > 50) status = "Средне";
+    if (value > 100) status = "Плохо";
+    if (value > 150) status = "Опасно";
+
+    document.getElementById("status").innerText = status;
+
+    marker.bindPopup(`PM2.5: ${value}`).openPopup();
+
+  } catch (e) {
+    document.getElementById("aqi").innerText = "Ошибка загрузки";
   }
-});
+}
+
+// первая загрузка
+loadAirData();
+
+// авто-обновление каждые 5 минут
+setInterval(loadAirData, 300000);
+
 </script>
-<!DOCTYPE html>
-<html lang="ru">
-<head>
-<meta charset="UTF-8" />
-<title>Уровни загрязнения воздуха в Алматы</title>
-<style>
-  body {
-    margin: 20px auto;
-    font-family: Arial, sans-serif;
-    max-width: 900px;
-    background: #f9f9f9;
-    color: #333;
-    line-height: 1.5;
-  }
-  h1, h2 {
-    text-align: center;
-  }
-  .map {
-    position: relative;
-    width: 800px;
-    height: 600px;
-    margin: 20px auto 40px;
-    background: url('https://upload.wikimedia.org/wikipedia/commons/6/6f/Almaty_map.png') no-repeat center/contain;
-    border: 2px solid #ccc;
-    border-radius: 8px;
-  }
-  .marker {
-    position: absolute;
-    padding: 6px 10px;
-    border-radius: 8px;
-    color: white;
-    font-weight: bold;
-    cursor: default;
-    box-shadow: 0 0 5px rgba(0,0,0,0.3);
-    user-select: none;
-  }
-  .green { background: #4caf50; }    
-  .yellow { background: #ffeb3b; color: #333; } 
-  .orange { background: #ff9800; }   
-  .red { background: #f44336; }      
-  .purple { background: #9c27b0; }   
-  .maroon { background: #7e0023; }   
 
-  .info-section {
-    background: white;
-    border-radius: 10px;
-    box-shadow: 0 0 15px rgba(0,0,0,0.1);
-    padding: 20px 30px;
-    margin: 30px auto;
-    max-width: 850px;
-  }
-  .info-section h2 {
-    color: #2c3e50;
-    margin-bottom: 15px;
-  }
-  .info-section p {
-    margin-bottom: 10px;
-  }
-  .info-section table {
-    width: 100%;
-    border-collapse: collapse;
-    margin-top: 15px;
-  }
-  .info-section th, .info-section td {
-    border: 1px solid #ddd;
-    padding: 8px 12px;
-    text-align: left;
-  }
-  .info-section th {
-    background-color: #f2f2f2;
-  }
-</style>
-</head>
-<body>
-
-<h1>Уровни загрязнения воздуха в Алматы по районам (AQI)</h1>
-
-<div class="map">
-  <div class="marker green" style="top: 150px; left: 530px;" title="Медеуский: 66 AQI">Медеуский<br>66 AQI</div>
-  <div class="marker green" style="top: 280px; left: 480px;" title="Наурызбайский: 65 AQI">Наурызбайский<br>65 AQI</div>
-  <div class="marker green" style="top: 230px; left: 400px;" title="Бостандыкский: 64 AQI">Бостандыкский<br>64 AQI</div>
-  <div class="marker green" style="top: 160px; left: 370px;" title="Алмалинский: 63 AQI">Алмалинский<br>63 AQI</div>
-  <div class="marker green" style="top: 280px; left: 350px;" title="Жетысуский: 62 AQI">Жетысуский<br>62 AQI</div>
-  <div class="marker green" style="top: 160px; left: 200px;" title="Турксибский: 61 AQI">Турксибский<br>61 AQI</div>
-  <div class="marker green" style="top: 300px; left: 250px;" title="Ауэзовский: 61 AQI">Ауэзовский<br>61 AQI</div>
-  <div class="marker green" style="top: 80px; left: 200px;" title="Алатауский: 60 AQI">Алатауский<br>60 AQI</div>
-</div>
-
-<div class="info-section">
-  <h2>Информация о загрязнении воздуха в Алматы</h2>
-  /* Анимированный фон: плавный градиент */
-  @keyframes gradientShift {
-    0% {
-      background-position: 0% 50%;
-    }
-    50% {
-      background-position: 100% 50%;
-    }
-    100% {
-      background-position: 0% 50%;
-    }
-  }
-  body {
-    margin: 20px auto;
-    font-family: Arial, sans-serif;
-    max-width: 900px;
-    background: linear-gradient(-45deg, #a1c4fd, #c2e9fb, #667eea, #764ba2);
-    background-size: 400% 400%;
-    animation: gradientShift 15s ease infinite;
-    color: #333;
-    line-height: 1.5;
-  }
-  h1, h2 {
-    text-align: center;
-    color: #fff;
-    text-shadow: 0 0 5px rgba(0,0,0,0.7);
-  }
-  .map {
-    position: relative;
-    width: 800px;
-    height: 600px;
-    margin: 20px auto 40px;
-    background: url('https://upload.wikimedia.org/wikipedia/commons/6/6f/Almaty_map.png') no-repeat center/contain;
-    border: 2px solid #ccc;
-    border-radius: 8px;
-    box-shadow: 0 0 15px rgba(0,0,0,0.3);
-    background-color: rgba(255,255,255,0.85);
-  }
-  .marker {
-    position: absolute;
-    padding: 6px 10px;
-    border-radius: 8px;
-    color: white;
-    font-weight: bold;
-    cursor: default;
-    box-shadow: 0 0 5px rgba(0,0,0,0.3);
-    user-select: none;
-    background: rgba(0,0,0,0.6);
-  }
-  .green { background: #4caf50; }    
-  .yellow { background: #ffeb3b; color: #333; } 
-  .orange { background: #ff9800; }   
-  .red { background: #f44336; }      
-  .purple { background: #9c27b0; }   
-  .maroon { background: #7e0023; }   
-
-  /* Анимация пульсации для иконок */
-  @keyframes pulse {
-    0%, 100% { transform: scale(1); opacity: 0.9; }
-    50% { transform: scale(1.2); opacity: 1; }
-  }
-
-  /* Иконка загрязнения */
-  .pollution-icon {
-    position: absolute;
-    width: 32px;
-    height: 32px;
-    animation: pulse 2.5s infinite ease-in-out;
-    pointer-events: none;
-  }
-
-  .info-section {
-    background: rgba(255, 255, 255, 0.95);
-    border-radius: 10px;
-    box-shadow: 0 0 15px rgba(0,0,0,0.15);
-    padding: 20px 30px;
-    margin: 30px auto;
-    max-width: 850px;
-    color: #333;
-  }
-  .info-section h2 {
-    color: #2c3e50;
-    margin-bottom: 15px;
-  }
-  .info-section p, .info-section ul, .info-section table {
-    margin-bottom: 10px;
-  }
-  .info-section table {
-    width: 100%;
-    border-collapse: collapse;
-    margin-top: 15px;
-  }
-  .info-section th, .info-section td {
-    border: 1px solid #ddd;
-    padding: 8px 12px;
-    text-align: left;
-  }
-  .info-section th {
-    background-color: #f2f2f2;
-  }
-</style>
-</head>
-<body>
-
-<h1>Уровни загрязнения воздуха в Алматы по районам (AQI)</h1>
-
-<div class="map">
-  <!-- Метки с AQI -->
-  <div class="marker green" style="top: 150px; left: 530px;" title="Медеуский: 66 AQI">Медеуский<br>66 AQI</div>
-  <div class="marker green" style="top: 280px; left: 480px;" title="Наурызбайский: 65 AQI">Наурызбайский<br>65 AQI</div>
-  <div class="marker green" style="top: 230px; left: 400px;" title="Бостандыкский: 64 AQI">Бостандыкский<br>64 AQI</div>
-  <div class="marker green" style="top: 160px; left: 370px;" title="Алмалинский: 63 AQI">Алмалинский<br>63 AQI</div>
-  <div class="marker green" style="top: 280px; left: 350px;" title="Жетысуский: 62 AQI">Жетысуский<br>62 AQI</div>
-  <div class="marker green" style="top: 160px; left: 200px;" title="Турксибский: 61 AQI">Турксибский<br>61 AQI</div>
-  <div class="marker green" style="top: 300px; left: 250px;" title="Ауэзовский: 61 AQI">Ауэзовский<br>61 AQI</div>
-  <div class="marker green" style="top: 80px; left: 200px;" title="Алатауский: 60 AQI">Алатауский<br>60 AQI</div>
-
-  <!-- Иконки загрязнения (пример дымка) -->
-  <img class="pollution-icon" src="https://img.icons8.com/ios-filled/50/ff6e40/smoke.png" style="top: 140px; left: 520px;" alt="Медеуский загрязнение" title="Медеуский загрязнение" />
-  <img class="pollution-icon" src="https://img.icons8.com/ios-filled/50/ff6e40/smoke.png" style="top: 270px; left: 470px;" alt="Наурызбайский загрязнение" title="Наурызбайский загрязнение" />
-  <img class="pollution-icon" src="https://img.icons8.com/ios-filled/50/ff6e40/smoke.png" style="top: 220px; left: 390px;" alt="Бостандыкский загрязнение" title="Бостандыкский загрязнение" />
-  <img class="pollution-icon" src="https://img.icons8.com/ios-filled/50/ff6e40/smoke.png" style="top: 150px; left: 360px;" alt="Алмалинский загрязнение" title="Алмалинский загрязнение" />
-  <img class="pollution-icon" src="https://img.icons8.com/ios-filled/50/ff6e40/smoke.png" style="top: 270px; left: 340px;" alt="Жетысуский загрязнение" title="Жетысуский загрязнение" />
-  <img class="pollution-icon" src="https://img.icons8.com/ios-filled/50/ff6e40/smoke.png" style="top: 150px; left: 190px;" alt="Турксибский загрязнение" title="Турксибский загрязнение" />
-  <img class="pollution-icon" src="https://img.icons8.com/ios-filled/50/ff6e40/smoke.png" style="top: 290px; left: 240px;" alt="Ауэзовский загрязнение" title="Ауэзовский загрязнение" />
-  <img class="pollution-icon" src="https://img.icons8.com/ios-filled/50/ff6e40/smoke.png" style="top: 70px; left: 190px;" alt="Алатауский загрязнение" title="Алатауский загрязнение" />
-</div>
-
-<div class="info-section">
-  <h2>Информация о загрязнении воздуха в Алматы</h2>
-
-  <h3>1. AQI и загрязнение сейчас</h3>
-  <p>По сервису IQAir (один из крупнейших сервисов мониторинга качества воздуха):</p>
-  <ul>
-    <li>Текущее значение AQI в городе ≈ <strong>113</strong> (неудовлетворительно для чувствительных групп) — в основном из-за <strong>PM2.5</strong> (мелких частиц).</li>
-    <li>Данные собираются более чем с 110 станций по всему городу.</li>
-    <li>Прогноз показывает, что AQI может снижаться ночью и утром, а также повышаться днём в зависимости от ветра и температуры.</li>
-  </ul>
-  <p><strong>⚠️ Это значит, что воздух не всегда опасен для всех, но для уязвимых людей (дети, пожилые, с проблемами дыхательных путей) может быть вредным.</strong></p>
-
-  <h3>2. Причины загрязнения воздуха</h3>
-  <p>Основные источники загрязнения:</p>
-  <ul>
-    <li>Автомобили и пробки — много старых машин, выхлопные газы скапливаются в узких улицах.</li>
-    <li>Горячие источники отопления зимой (ТЭЦ, печное отопление) — сжигание угля/топлива добавляет PM2.5.</li>
-    <li>Город расположен в котловине, что препятствует рассеиванию загрязнений, особенно в холодное время года, когда финальный слой воздуха «накрывает» город.</li>
-  </ul>
-
-  <h3>3. Как жители описывают воздух</h3>
-  <ul>
-    <li>Многие отмечают смог и видимую грязную дымку, особенно зимой.</li>
-    <li>Некоторые сравнивают дыхание воздуха в Алма-Ате с большим количеством выкуренных сигарет.</li>
-    <li>Северные районы города (выше по высоте) часто имеют лучшее качество воздуха, чем низменные.</li>
-    <li>Люди используют маски (KN95/N95) и домашние очистители воздуха, чтобы снизить воздействие.</li>
-  </ul>
-
-  <h3>4. Графики и динамика AQI</h3>
-  <ul>
-    <li>AQI падает ночью и утром (≈ 50–70)</li>
-    <li>Днём иногда поднимается выше 100</li>
-    <li>Суточные колебания зависят от ветра, температуры и активности транспорта</li>
-  </ul>
-
-  <h3>5. Итог — что это значит</h3>
-  <table>
-    <thead>
-      <tr>
-        <th>Фактор</th>
-        <th>Эффект</th>
-      </tr>
-    </thead>
-    <tbody>
-      <tr>
-        <td>PM2.5</td>
-        <td>Основной загрязнитель, опасен при длительном воздействии</td>
-      </tr>
-      <tr>
-        <td>Ветер и погода</td>
-        <td>Сильный ветер может разогнать смог</td>
-      </tr>
-      <tr>
-        <td>Долина/горная котловина</td>
-        <td>Удерживает загрязнённый воздух внизу города</td>
-      </tr>
-      <tr>
-        <td>Время дня</td>
-        <td>Обычно хуже — утром и вечером</td>
-      </tr>
-    </tbody>
-  </table>
-</div>
-<!DOCTYPE html>
-<html lang="ru">
-<head>
-<meta charset="UTF-8" />
-<title>Уровни загрязнения воздуха в Алматы</title>
-<style>
-  /* Анимированный фон для всей страницы */
-  @keyframes gradientShift {
-    0% { background-position: 0% 50%; }
-    50% { background-position: 100% 50%; }
-    100% { background-position: 0% 50%; }
-  }
-
-  body {
-    margin: 20px auto;
-    font-family: Arial, sans-serif;
-    max-width: 900px;
-    background: linear-gradient(-45deg, #a1c4fd, #c2e9fb, #667eea, #764ba2);
-    background-size: 400% 400%;
-    animation: gradientShift 15s ease infinite;
-    color: #333;
-    line-height: 1.5;
-  }
-
-  h1, h2 {
-    text-align: center;
-    color: #fff;
-    text-shadow: 0 0 5px rgba(0,0,0,0.7);
-  }
-
-  .map {
-    position: relative;
-    width: 800px;
-    height: 600px;
-    margin: 20px auto 40px;
-    background: url('https://upload.wikimedia.org/wikipedia/commons/6/6f/Almaty_map.png') no-repeat center/contain;
-    border: 2px solid #ccc;
-    border-radius: 8px;
-    box-shadow: 0 0 15px rgba(0,0,0,0.3);
-    background-color: rgba(255,255,255,0.85);
-  }
-
-  .marker {
-    position: absolute;
-    padding: 6px 10px;
-    border-radius: 8px;
-    color: white;
-    font-weight: bold;
-    cursor: default;
-    box-shadow: 0 0 5px rgba(0,0,0,0.3);
-    user-select: none;
-    background: rgba(0,0,0,0.6);
-  }
-
-  .green { background: #4caf50; }    
-  .yellow { background: #ffeb3b; color: #333; } 
-  .orange { background: #ff9800; }   
-  .red { background: #f44336; }      
-  .purple { background: #9c27b0; }   
-  .maroon { background: #7e0023; }   
-
-  /* Пульсирующая анимация для иконок загрязнения */
-  @keyframes pulse {
-    0%, 100% { transform: scale(1); opacity: 0.9; }
-    50% { transform: scale(1.2); opacity: 1; }
-  }
-
-  .pollution-icon {
-    position: absolute;
-    width: 32px;
-    height: 32px;
-    animation: pulse 2.5s infinite ease-in-out;
-    pointer-events: none;
-  }
-
-  .info-section {
-    background: rgba(255, 255, 255, 0.95);
-    border-radius: 10px;
-    box-shadow: 0 0 15px rgba(0,0,0,0.15);
-    padding: 20px 30px;
-    margin: 30px auto;
-    max-width: 850px;
-    color: #333;
-  }
-
-  .info-section h2 {
-    color: #2c3e50;
-    margin-bottom: 15px;
-  }
-
-  .info-section p, .info-section ul, .info-section table {
-    margin-bottom: 10px;
-  }
-
-  .info-section table {
-    width: 100%;
-    border-collapse: collapse;
-    margin-top: 15px;
-  }
-
-  .info-section th, .info-section td {
-    border: 1px solid #ddd;
-    padding: 8px 12px;
-    text-align: left;
-  }
-
-  .info-section th {
-    background-color: #f2f2f2;
-  }
-</style>
-</head>
-<body>
-
-<h1>Уровни загрязнения воздуха в Алматы по районам (AQI)</h1>
-
-<div class="map">
-  <!-- Метки с AQI -->
-  <div class="marker green" style="top: 150px; left: 530px;" title="Медеуский: 66 AQI">Медеуский<br>66 AQI</div>
-  <div class="marker green" style="top: 280px; left: 480px;" title="Наурызбайский: 65 AQI">Наурызбайский<br>65 AQI</div>
-  <div class="marker green" style="top: 230px; left: 400px;" title="Бостандыкский: 64 AQI">Бостандыкский<br>64 AQI</div>
-  <div class="marker green" style="top: 160px; left: 370px;" title="Алмалинский: 63 AQI">Алмалинский<br>63 AQI</div>
-  <div class="marker green" style="top: 280px; left: 350px;" title="Жетысуский: 62 AQI">Жетысуский<br>62 AQI</div>
-  <div class="marker green" style="top: 160px; left: 200px;" title="Турксибский: 61 AQI">Турксибский<br>61 AQI</div>
-  <div class="marker green" style="top: 300px; left: 250px;" title="Ауэзовский: 61 AQI">Ауэзовский<br>61 AQI</div>
-  <div class="marker green" style="top: 80px; left: 200px;" title="Алатауский: 60 AQI">Алатауский<br>60 AQI</div>
-
-  <!-- Иконки загрязнения -->
-  <img class="pollution-icon" src="https://img.icons8.com/ios-filled/50/ff6e40/smoke.png" style="top: 140px; left: 520px;" alt="Медеуский загрязнение" />
-  <img class="pollution-icon" src="https://img.icons8.com/ios-filled/50/ff6e40/smoke.png" style="top: 270px; left: 470px;" alt="Наурызбайский загрязнение" />
-  <img class="pollution-icon" src="https://img.icons8.com/ios-filled/50/ff6e40/smoke.png" style="top: 220px; left: 390px;" alt="Бостандыкский загрязнение" />
-</div>
-
-<div class="info-section">
-  <h2>Информация о загрязнении воздуха в Алматы</h2>
-  <p>По сервису IQAir: текущий AQI ≈ <strong>113</strong>, основной загрязнитель — PM2.5.</p>
-  <p>Источники: транспорт, отопление, городская котловина.</p>
-</div>
-
-</body>
-</html>
-
-
-</body>
-</html>
-
-</body>
-</html>
 </body>
 </html>
